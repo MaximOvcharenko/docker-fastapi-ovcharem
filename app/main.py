@@ -22,3 +22,11 @@ def read_root():
 @app.get("/api/ip")
 async def get_ip(request: Request):
     return {"ip": request.client.host}
+
+@app.get("/ip", response_class=HTMLResponse)
+def ip(request: Request):
+    return f"<h1>ip {request.client.host}</h1>"
+
+@app.get("/hello")
+def hello():
+    return { "msg": "Hello Max"}
