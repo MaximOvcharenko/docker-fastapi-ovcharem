@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware  
 from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse
 
 app = FastAPI()
 
@@ -30,3 +31,15 @@ def ip(request: Request):
 @app.get("/hello")
 def hello():
     return { "msg": "Hello Max"}
+
+
+@app.get("/rooms")
+def get_rooms():
+    return rooms
+
+@app.get("/rooms/{room_number}")
+def get_room(room_number: int):
+    for room in rooms:
+        if room["room_number"] == room_number:
+            return room
+    return {"error": "Room not found"}
