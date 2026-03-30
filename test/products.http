@@ -1,13 +1,10 @@
+@apiUrl = http://localhost:8080
 
-@apiUrl = https://fw-teaching.fi/demo/wdbocms/api/v1/products
+### Get all rooms
+GET {{apiUrl}}/rooms
 
+### Get one room
+GET {{apiUrl}}/rooms/101
 
-GET {{apiUrl}}
-
-GET {{apiUrl}}/1002
-Content-Type: application/json
-{
-    "name": "New Product",
-    "description": "This is a new product.",
-    "price": 19.99
-}
+### Room that does not exist
+GET {{apiUrl}}/rooms/999

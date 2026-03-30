@@ -1,9 +1,30 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware  
-from fastapi.responses import JSONResponse
 from fastapi.responses import HTMLResponse
 
 app = FastAPI()
+
+# Temporary in-memory data for the first hotel API challenge step.
+rooms = [
+    {
+        "room_number": 101,
+        "type": "single",
+        "price_per_night": 79.0,
+        "available": True,
+    },
+    {
+        "room_number": 102,
+        "type": "double",
+        "price_per_night": 109.0,
+        "available": True,
+    },
+    {
+        "room_number": 201,
+        "type": "suite",
+        "price_per_night": 189.0,
+        "available": False,
+    },
+]
 
 orgins = ["*"]  # Allow all origins
 
