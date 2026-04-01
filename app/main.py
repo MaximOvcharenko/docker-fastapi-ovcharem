@@ -54,11 +54,11 @@ def hello():
     return { "msg": "Hello Max"}
 
 
-@app.get("/rooms")
+@app.get("/rooms", response_class=HTMLResponse)
 def get_rooms():
     return rooms
 
-@app.get("/rooms/{room_number}")
+@app.get("/rooms/{room_number}", response_class=HTMLResponse)
 def get_room(room_number: int):
     for room in rooms:
         if room["room_number"] == room_number:
