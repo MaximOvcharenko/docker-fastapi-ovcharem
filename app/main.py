@@ -1,6 +1,8 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware  
 from fastapi.responses import HTMLResponse
+from fastapi import FastAPI
+from datetime import datetime
 
 app = FastAPI()
 
@@ -64,3 +66,8 @@ def get_room(room_number: int):
         if room["room_number"] == room_number:
             return room
     return {"error": "Room not found"}
+
+@app.get("/time")
+def get_time():
+    return {"time": datetime.now().isoformat()}
+
