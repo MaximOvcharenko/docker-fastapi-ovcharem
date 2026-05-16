@@ -1,137 +1,130 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.security.api_key import APIKeyHeader
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
+from fastapi.responses import FileResponse
+from sqlalchemy import select
+from sqlalchemy.orm import joinedload, Session
 import os
 
-app = FastAPI()
+from app.db import init_db, create_default_data, get_db, User, ToDo, Category
+from app.schemas import TodoCreate, TodoRead, TodoUpdate, CategoryRead
 
-# Database setup
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://devuser:devpassword@localhost:5432/devdb")
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+app = FastAPI(title="ToDo API")
 
-# CORS
-origins = ["*"]
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_origins=origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-@app.get("/")
-def read_root():
-    return { "msg": "Hello!", "Docker": "0.1" }
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
-@app.get("/api/ip")
-async def get_ip(request: Request):
-    return {"ip": request.client.host}
-
-@app.get("/ip", response_class=HTMLResponse)
-async def get_ip_html(request: Request):
-    return f"<h1>Your IP: {request.client.host}</h1>"
-
-# Hotel API endpoints
-
-@app.get("/rooms")
-def get_rooms():
-    with SessionLocal() as session:
-        result = session.execute(text("""
-            SELECT id, room_number, price_per_night
-            FROM rooms
-        """))
-        rooms = [{"id": row[0], "name": row[1], "price_per_night": float(row[2])} for row in result]
-        return rooms
-
-@app.get("/bookings")
-def get_bookings():
-    with SessionLocal() as session:
-        result = session.execute(text("""
-            SELECT
-                b.id AS booking_id,
-                g.name AS guest_name,
-                r.room_number,
-                EXTRACT(day FROM b.date_to - b.date_from)::int AS nights,
-                EXTRACT(day FROM b.date_to - b.date_from)::int * r.price_per_night AS total_price,
-                b.date_from,
-                b.date_to
-            FROM bookings b
-            INNER JOIN guests g ON b.guest_id = g.id
-            INNER JOIN rooms r ON b.room_id = r.id
-        """))
-        bookings = [{
-            "booking_id": row[0],
-            "guest_name": row[1],
-            "room_number": row[2],
-            "nights": row[3],
-            "total_price": float(row[4]),
-            "date_from": str(row[5]),
-            "date_to": str(row[6])
-        } for row in result]
-        return bookings
-
-@app.get("/guests")
-def get_guests():
-    with SessionLocal() as session:
-        result = session.execute(text("""
-            SELECT
-                g.id AS guest_id,
-                g.name,
-                COALESCE((
-                    SELECT COUNT(*)
-                    FROM bookings AS b
-                    WHERE b.guest_id = g.id
-                      AND b.date_to < CURRENT_DATE
-                ), 0) AS visits_count
-            FROM guests AS g
-        """))
-        guests = [{
-            "guest_id": row[0],
-            "name": row[1],
-            "visits_count": row[2]
-        } for row in result]
-        return guests
-
-@app.post("/bookings")
-def create_booking(booking: dict):
-    with SessionLocal() as session:
-        session.execute(text("""
-            INSERT INTO bookings (guest_id, room_id, date_from, date_to)
-            VALUES (:guest_id, :room_id, :date_from, :date_to)
-        """), {
-            "guest_id": booking["guest_id"],
-            "room_id": booking["room_id"],
-            "date_from": booking["date_from"],
-            "date_to": booking["date_to"]
-        })
-        session.commit()
-        return {"message": "Booking created"}
-
-# Temporary rooms endpoint for compatibility
-@app.get("/api/rooms")
-def get_api_rooms():
-    return get_rooms()
-
-@app.get("/hello")
-def hello():
-    return { "msg": "Hello Max"}
+# Mount static files
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.exists(static_dir):
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
-@app.get("/rooms")
-def get_rooms():
-    return rooms
+def get_current_user(api_key: str = Depends(api_key_header), db: Session = Depends(get_db)) -> User:
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing X-API-Key header",
+        )
 
-@app.get("/rooms/{room_number}")
-def get_room(room_number: int):
-    for room in rooms:
-        if room["room_number"] == room_number:
-            return room
-    return {"error": "Room not found"}
+    user = db.execute(select(User).where(User.api_key == api_key)).scalars().first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key",
+        )
+    return user
 
-@app.get("/time")
-def get_time():
-    return {"time": datetime.now().isoformat()}
+
+@app.on_event("startup")
+def startup_event():
+    init_db()
+    create_default_data()
+
+
+@app.get("/", summary="Serve main page")
+def root():
+    index_path = os.path.join(os.path.dirname(__file__), "static", "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path, media_type="text/html")
+    return {"message": "ToDo API is running"}
+
+
+@app.get("/categories", response_model=list[CategoryRead])
+def list_categories(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    categories = db.execute(select(Category).order_by(Category.name)).scalars().all()
+    return categories
+
+
+@app.get("/todos", response_model=list[TodoRead])
+def list_todos(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    todos = (
+        db.execute(
+            select(ToDo)
+            .options(joinedload(ToDo.category))
+            .where(ToDo.user_id == current_user.id)
+            .order_by(ToDo.created_at.desc())
+        )
+        .scalars()
+        .all()
+    )
+    return todos
+
+
+@app.post("/todos", response_model=TodoRead, status_code=status.HTTP_201_CREATED)
+def create_todo(todo_in: TodoCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    category = db.execute(select(Category).where(Category.id == todo_in.category_id)).scalars().first()
+    if not category:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Category not found")
+
+    todo = ToDo(
+        user_id=current_user.id,
+        category_id=category.id,
+        text=todo_in.text,
+        done=False,
+    )
+    db.add(todo)
+    db.commit()
+    db.refresh(todo)
+    return todo
+
+
+@app.put("/todos/{todo_id}", response_model=TodoRead)
+def update_todo(todo_id: int, todo_in: TodoUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    todo = db.execute(select(ToDo).where(ToDo.id == todo_id, ToDo.user_id == current_user.id)).scalars().first()
+    if not todo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ToDo not found")
+
+    if todo_in.text is not None:
+        todo.text = todo_in.text
+    if todo_in.done is not None:
+        todo.done = todo_in.done
+    if todo_in.category_id is not None:
+        category = db.execute(select(Category).where(Category.id == todo_in.category_id)).scalars().first()
+        if not category:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Category not found")
+        todo.category_id = category.id
+
+    db.commit()
+    db.refresh(todo)
+    return todo
+
+
+@app.delete("/todos/{todo_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_todo(todo_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    todo = db.execute(select(ToDo).where(ToDo.id == todo_id, ToDo.user_id == current_user.id)).scalars().first()
+    if not todo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ToDo not found")
+    db.delete(todo)
+    db.commit()
+    return None
 
