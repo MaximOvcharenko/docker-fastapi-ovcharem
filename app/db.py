@@ -2,7 +2,11 @@ import os
 from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, Text, Boolean, DateTime, func
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
+<<<<<<< Updated upstream
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+psycopg2://devuser:devpassword@localhost:5432/devdb")
+=======
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+psycopg://devuser:devpassword@localhost:5432/devdb")
+>>>>>>> Stashed changes
 
 engine = create_engine(DATABASE_URL, future=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
